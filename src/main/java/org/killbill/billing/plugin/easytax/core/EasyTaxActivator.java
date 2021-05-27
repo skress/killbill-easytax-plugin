@@ -51,8 +51,7 @@ public class EasyTaxActivator extends KillbillActivatorBase {
         final JooqEasyTaxDao dao = new JooqEasyTaxDao(ds, dialect);
         final Clock clock = new DefaultClock();
 
-        configurationHandler = new EasyTaxConfigurationHandler(PLUGIN_NAME, killbillAPI,
-                logService);
+        configurationHandler = new EasyTaxConfigurationHandler(PLUGIN_NAME, killbillAPI);
 
         final EasyTaxConfig globalConfig = configurationHandler
                 .createConfigurable(configProperties.getProperties());

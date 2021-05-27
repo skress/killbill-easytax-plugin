@@ -34,6 +34,9 @@ import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
 
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Multimap;
 import org.joda.time.DateTime;
 import org.joda.time.LocalDate;
 import org.killbill.billing.account.api.Account;
@@ -41,8 +44,9 @@ import org.killbill.billing.catalog.api.CatalogApiException;
 import org.killbill.billing.catalog.api.Plan;
 import org.killbill.billing.catalog.api.StaticCatalog;
 import org.killbill.billing.invoice.api.Invoice;
+import org.killbill.billing.invoice.api.InvoiceApiException;
 import org.killbill.billing.invoice.api.InvoiceItem;
-import org.killbill.billing.osgi.api.OSGIKillbill;
+import org.killbill.billing.osgi.libs.killbill.OSGIKillbillAPI;
 import org.killbill.billing.payment.api.PluginProperty;
 import org.killbill.billing.plugin.api.invoice.PluginTaxCalculator;
 import org.killbill.billing.plugin.easytax.core.AccountCustomFieldTaxZoneResolver;
@@ -51,6 +55,8 @@ import org.killbill.billing.plugin.easytax.core.EasyTaxConfigurationHandler;
 import org.killbill.billing.plugin.easytax.core.EasyTaxTaxCode;
 import org.killbill.billing.plugin.easytax.core.EasyTaxTaxation;
 import org.killbill.billing.plugin.easytax.core.SimpleTaxDateResolver;
+import org.killbill.billing.plugin.easytax.dao.gen.tables.records.EasytaxTaxationsRecord;
+import org.killbill.billing.util.callcontext.TenantContext;
 import org.killbill.clock.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,7 +78,7 @@ public class EasyTaxTaxCalculator extends PluginTaxCalculator {
     private static final ConcurrentMap<UUID, EasyTaxTaxDateResolver> DATE_RESOLVER_CACHE = new ConcurrentHashMap<>();
     // CHECKSTYLE ON: LineLength
 
-    private final OSGIKillbill killbillApi;
+    private final OSGIKillbillAPI killbillApi;
     private final EasyTaxConfigurationHandler configurationHandler;
     private final EasyTaxDao dao;
     private final OptionalService<EasyTaxTaxZoneResolver> taxZoneResolver;
@@ -97,11 +103,11 @@ public class EasyTaxTaxCalculator extends PluginTaxCalculator {
      * @param clock
      *            the system clock
      */
-    public EasyTaxTaxCalculator(final OSGIKillbill killbillApi,
+    public EasyTaxTaxCalculator(final OSGIKillbillAPI killbillApi,
             final EasyTaxConfigurationHandler configurationHandler, final EasyTaxDao dao,
             final OptionalService<EasyTaxTaxZoneResolver> taxZoneResolver,
             final OptionalService<EasyTaxTaxDateResolver> taxDateResolver, final Clock clock) {
-        super();
+        super(killbillApi);
         this.killbillApi = killbillApi;
         this.configurationHandler = configurationHandler;
         this.dao = dao;
@@ -186,84 +192,93 @@ public class EasyTaxTaxCalculator extends PluginTaxCalculator {
         });
     }
 
-    @Override
-    public List<InvoiceItem> compute(Account account, Invoice newInvoice, Invoice invoice,
-            Map<UUID, InvoiceItem> taxableItems, Map<UUID, Collection<InvoiceItem>> adjustmentItems,
-            boolean dryRun, Iterable<PluginProperty> pluginProperties, UUID kbTenantId) {
+    public List<InvoiceItem> compute(final Account account,
+                                     final Invoice newInvoice,
+                                     final boolean dryRun,
+                                     final Iterable<PluginProperty> pluginProperties,
+                                     final TenantContext tenantContext) throws InvoiceApiException {
+
         // instantiate zone resolver
-        EasyTaxTaxZoneResolver resolver = taxZoneResolver(kbTenantId);
-        String taxZone = resolver.taxZoneForInvoice(kbTenantId, account, invoice, pluginProperties);
+        EasyTaxTaxZoneResolver resolver = taxZoneResolver(tenantContext.getTenantId());
+        String taxZone = resolver.taxZoneForInvoice(tenantContext.getTenantId(), account, newInvoice, pluginProperties);
         if (taxZone == null) {
             return Collections.emptyList();
         }
 
-        Map<UUID, Set<UUID>> alreadyTaxedItems = getAlreadyTaxedItemsWithTaxes(invoice, kbTenantId);
+        // retrieve what we've already taxed
+        Map<UUID, Set<UUID>> alreadyTaxedItems = getAlreadyTaxedItemsWithTaxes(newInvoice, tenantContext.getTenantId());
 
-        final Map<UUID, InvoiceItem> salesTaxItems = new LinkedHashMap<>();
-        final Map<UUID, InvoiceItem> returnTaxItems = new LinkedHashMap<>();
-        // CHECKSTYLE OFF: LineLength
-        final Map<UUID, Collection<InvoiceItem>> adjustmentItemsForReturnTaxItems = new LinkedHashMap<>();
-        computeNewItemsToTaxAndExistingItemsToAdjust(taxableItems, adjustmentItems,
-                alreadyTaxedItems, salesTaxItems, returnTaxItems, adjustmentItemsForReturnTaxItems);
-        // CHECKSTYLE ON: LineLength
+        final List<NewItemToTax> newItemsToTax = computeTaxItems(newInvoice, alreadyTaxedItems, tenantContext);
+        final Map<UUID, InvoiceItem> salesTaxItems = new HashMap<UUID, InvoiceItem>();
+        for (final NewItemToTax newItemToTax : newItemsToTax) {
+            if (!newItemToTax.isReturnOnly()) {
+                salesTaxItems.put(newItemToTax.getTaxableItem().getId(), newItemToTax.getTaxableItem());
+            }
+        }
+
         // TODO: make static for actual caching support?
         final Map<String, String> planToProductCache = new HashMap<>();
 
-        List<InvoiceItem> newTaxInvoiceItems = new ArrayList<>();
+        final ImmutableList.Builder<InvoiceItem> newInvoiceItemsBuilder = ImmutableList.<InvoiceItem>builder();
         if (!salesTaxItems.isEmpty()) {
-            newTaxInvoiceItems.addAll(getTaxItems(account, newInvoice, invoice, salesTaxItems, null,
-                    null, dryRun, taxZone, planToProductCache, kbTenantId));
+            newInvoiceItemsBuilder.addAll(getTaxItems(
+                    account,
+                    newInvoice,
+                    newInvoice,
+                    salesTaxItems,
+                    null,
+
+                    null,
+                    dryRun,
+                    taxZone,
+                    planToProductCache,
+                    tenantContext.getTenantId()
+                    ));
         }
-        if (!returnTaxItems.isEmpty()) {
+
+        // Handle returns by original invoice (1 return call for each original invoice)
+        final Multimap<UUID, NewItemToTax> itemsToReturnByInvoiceId = HashMultimap.<UUID, NewItemToTax>create();
+        for (final NewItemToTax newItemToTax : newItemsToTax) {
+            if (newItemToTax.getAdjustmentItems() == null) {
+                continue;
+            }
+            itemsToReturnByInvoiceId.put(newItemToTax.getInvoice().getId(), newItemToTax);
+        }
+        for (final UUID invoiceId : itemsToReturnByInvoiceId.keySet()) {
+            final Collection<NewItemToTax> itemsToReturn = itemsToReturnByInvoiceId.get(invoiceId);
+
+            final Invoice invoice = itemsToReturn.iterator().next().getInvoice();
+            final Map<UUID, InvoiceItem> taxableItemsToReturn = new HashMap<UUID, InvoiceItem>();
+            final Map<UUID, List<InvoiceItem>> adjustmentItems = new HashMap<UUID, List<InvoiceItem>>();
+            for (final NewItemToTax itemToReturn : itemsToReturn) {
+                taxableItemsToReturn.put(itemToReturn.getTaxableItem().getId(), itemToReturn.getTaxableItem());
+                adjustmentItems.put(itemToReturn.getTaxableItem().getId(), itemToReturn.getAdjustmentItems());
+            }
+
             // TODO: tracking original invoice ref code?
-            final String originalInvoiceReferenceCode;
+            String originalInvoiceReferenceCode = null;
             try {
-                final List<EasyTaxTaxation> responses = dao.getTaxation(kbTenantId, account.getId(),
+                final List<EasyTaxTaxation> responses = dao.getTaxation(tenantContext.getTenantId(), account.getId(),
                         invoice.getId());
-                originalInvoiceReferenceCode = responses.isEmpty() ? null
-                        : responses.get(0).getRecordId().toString();
+                originalInvoiceReferenceCode = responses.isEmpty() ? null : responses.get(0).getRecordId().toString();
             } catch (final SQLException e) {
-                log.warn("Unable to compute tax for account " + account.getId(), e);
-                return Collections.emptyList();
+                log.error("Could not get 'originalInvoiceReferenceCode' - unable to compute tax for account " + account.getId(), e);
             }
 
-            newTaxInvoiceItems.addAll(getTaxItems(account, newInvoice, invoice, returnTaxItems,
-                    adjustmentItemsForReturnTaxItems, originalInvoiceReferenceCode, dryRun, taxZone,
-                    planToProductCache, kbTenantId));
+            newInvoiceItemsBuilder.addAll(getTaxItems(
+                    account,
+                    newInvoice,
+                    invoice,
+                    taxableItemsToReturn,
+                    adjustmentItems,
+                    originalInvoiceReferenceCode,
+                    dryRun,
+                    taxZone,
+                    planToProductCache,
+                    tenantContext.getTenantId()
+                    ));
         }
-
-        // add to already taxed settings
-        if (!newTaxInvoiceItems.isEmpty()) {
-            EasyTaxTaxation taxation = new EasyTaxTaxation();
-            taxation.setCreatedDate(clock.getUTCNow());
-            taxation.setKbTenantId(kbTenantId);
-            taxation.setKbAccountId(account.getId());
-            taxation.setKbInvoiceId(invoice.getId());
-
-            // sum up total new tax and update the mapping of taxable -> tax item IDs
-            Map<UUID, Set<UUID>> taxedItemsWithAdjustments = new HashMap<>();
-            for (Map.Entry<UUID, Collection<InvoiceItem>> entry : adjustmentItems.entrySet()) {
-                taxedItemsWithAdjustments.put(entry.getKey(), entry.getValue().stream()
-                        .map(item -> item.getId()).collect(Collectors.toSet()));
-            }
-            BigDecimal totalTax = BigDecimal.ZERO;
-            for (InvoiceItem item : newTaxInvoiceItems) {
-                totalTax = totalTax.add(item.getAmount());
-                taxedItemsWithAdjustments
-                        .computeIfAbsent(item.getLinkedItemId(), k -> new HashSet<>())
-                        .add(item.getId());
-            }
-            taxation.setInvoiceItemIds(taxedItemsWithAdjustments);
-            taxation.setTotalTax(totalTax);
-            try {
-                dao.addTaxation(taxation);
-            } catch (SQLException e) {
-                log.error("Error saving taxation record for invoice {}", invoice.getId(), e);
-                return Collections.emptyList();
-            }
-        }
-
-        return Collections.unmodifiableList(newTaxInvoiceItems);
+        return newInvoiceItemsBuilder.build();
 
     }
 
@@ -302,11 +317,16 @@ public class EasyTaxTaxCalculator extends PluginTaxCalculator {
         return alreadyTaxed != null ? alreadyTaxed : Collections.emptyMap();
     }
 
-    private List<InvoiceItem> getTaxItems(final Account account, final Invoice newInvoice,
-            final Invoice invoice, final Map<UUID, InvoiceItem> taxableItems,
-            @Nullable final Map<UUID, Collection<InvoiceItem>> adjustmentItems,
-            @Nullable final String originalInvoiceReferenceCode, final boolean dryRun,
-            final String taxZone, final Map<String, String> planToProductCache,
+    private List<InvoiceItem> getTaxItems(
+            final Account account,
+            final Invoice newInvoice,
+            final Invoice invoice,
+            final Map<UUID, InvoiceItem> taxableItems,
+            @Nullable final Map<UUID, List<InvoiceItem>> adjustmentItems,
+            @Nullable final String originalInvoiceReferenceCode,
+            final boolean dryRun,
+            final String taxZone,
+            final Map<String, String> planToProductCache,
             final UUID kbTenantId) {
         // Keep track of the invoice items and adjustments we've already taxed
         final Map<UUID, Iterable<InvoiceItem>> kbInvoiceItems = new HashMap<>();
@@ -322,14 +342,50 @@ public class EasyTaxTaxCalculator extends PluginTaxCalculator {
         final LocalDate taxItemsDate = newInvoice.getInvoiceDate();
 
         try {
-            return buildInvoiceItems(account, newInvoice, invoice, taxableItems, adjustmentItems,
+            final List<InvoiceItem> newTaxInvoiceItems = buildInvoiceItems(account, newInvoice, invoice, taxableItems, adjustmentItems,
                     originalInvoiceReferenceCode, dryRun, taxZone, planToProductCache, kbTenantId,
                     kbInvoiceItems, taxItemsDate);
+            // add to already taxed settings
+            if (!newTaxInvoiceItems.isEmpty()) {
+                EasyTaxTaxation taxation = new EasyTaxTaxation();
+                taxation.setCreatedDate(clock.getUTCNow());
+                taxation.setKbTenantId(kbTenantId);
+                taxation.setKbAccountId(account.getId());
+                taxation.setKbInvoiceId(invoice.getId());
+
+                // sum up total new tax and update the mapping of taxable -> tax item IDs
+                Map<UUID, Set<UUID>> taxedItemsWithAdjustments = new HashMap<>();
+                if (adjustmentItems != null) {
+                    for (Map.Entry<UUID, List<InvoiceItem>> entry : adjustmentItems.entrySet()) {
+                        taxedItemsWithAdjustments.put(entry.getKey(), entry.getValue().stream()
+                                .map(item -> item.getId()).collect(Collectors.toSet()));
+                    }
+                }
+                BigDecimal totalTax = BigDecimal.ZERO;
+                for (InvoiceItem item : newTaxInvoiceItems) {
+                    totalTax = totalTax.add(item.getAmount());
+                    taxedItemsWithAdjustments
+                            .computeIfAbsent(item.getLinkedItemId(), k -> new HashSet<>())
+                            .add(item.getId());
+                }
+                taxation.setInvoiceItemIds(taxedItemsWithAdjustments);
+                taxation.setTotalTax(totalTax);
+                if (!dryRun) {
+                    try {
+                        dao.addTaxation(taxation);
+                    } catch (SQLException e) {
+                        log.error("Error saving taxation record for invoice {}", invoice.getId(), e);
+                        return Collections.emptyList();
+                    }
+                }
+            }
+            return newTaxInvoiceItems;
+
         } catch (final RuntimeException e) {
-            log.warn("Unable to compute tax for account " + account.getId(), e);
+            log.error("Unable to compute tax for account " + account.getId(), e);
             return Collections.emptyList();
         } catch (final SQLException e) {
-            log.warn("Unable to compute tax for account " + account.getId(), e);
+            log.error("Unable to compute tax for account " + account.getId(), e);
             return Collections.emptyList();
         }
     }
@@ -354,45 +410,66 @@ public class EasyTaxTaxCalculator extends PluginTaxCalculator {
         });
     }
 
-    private List<InvoiceItem> buildInvoiceItems(final Account account, final Invoice newInvoice,
-            final Invoice invoice, final Map<UUID, InvoiceItem> taxableItems,
-            @Nullable final Map<UUID, Collection<InvoiceItem>> adjustmentItems,
-            @Nullable final String originalInvoiceReferenceCode, final boolean dryRun,
-            final String taxZone, final Map<String, String> planToProductCache,
-            final UUID kbTenantId, final Map<UUID, Iterable<InvoiceItem>> kbInvoiceItems,
-            final LocalDate utcToday) throws SQLException {
+    private List<InvoiceItem> buildInvoiceItems(
+            final Account account,
+            final Invoice newInvoice,
+            final Invoice invoice,
+            final Map<UUID, InvoiceItem> taxableItems,
+            @Nullable final Map<UUID, List<InvoiceItem>> adjustmentItems,
+            @Nullable final String originalInvoiceReferenceCode,
+            final boolean dryRun,
+            final String taxZone,
+            final Map<String, String> planToProductCache,
+            final UUID kbTenantId,
+            final Map<UUID, Iterable<InvoiceItem>> kbInvoiceItems,
+            final LocalDate utcToday
+    ) throws SQLException {
         final List<InvoiceItem> newTaxItems = new ArrayList<>();
         for (final InvoiceItem taxableItem : taxableItems.values()) {
-            final Collection<InvoiceItem> adjustmentsForTaxableItem = adjustmentItems == null ? null
-                    : adjustmentItems.get(taxableItem.getId());
-            final BigDecimal netItemAmount = adjustmentsForTaxableItem == null
-                    ? taxableItem.getAmount()
-                    : sum(adjustmentsForTaxableItem);
-            newTaxItems.addAll(taxInvoiceItemsForInvoiceItem(account, newInvoice, taxableItem,
-                    taxZone, netItemAmount, utcToday, kbTenantId, planToProductCache));
+            if (adjustmentItems != null) {
+                final InvoiceItem adjustmentItem;
+                if (adjustmentItems.get(taxableItem.getId()) != null && adjustmentItems.get(taxableItem.getId()).size() == 1) {
+                    // Could be a repair or an item adjustment: in either case, we use it to compute the service period
+                    adjustmentItem = adjustmentItems.get(taxableItem.getId()).get(0);
+                } else {
+                    // Multiple adjustments: use the original service period
+                    adjustmentItem = null;
+                }
+                final BigDecimal adjustmentAmount = sum(adjustmentItems.get(taxableItem.getId()));
+                newTaxItems.addAll(taxInvoiceItemsForInvoiceItem(account, newInvoice, taxableItem, adjustmentItem, taxZone,
+                        adjustmentAmount, kbTenantId, planToProductCache));
+            } else {
+                newTaxItems.addAll(taxInvoiceItemsForInvoiceItem(account, newInvoice, taxableItem, null, taxZone, taxableItem.getAmount(),
+                        kbTenantId, planToProductCache));
+            }
+
         }
 
         return newTaxItems;
     }
 
-    private DateTime taxDateForInvoiceItem(UUID kbTenantId, Account account, Invoice invoice,
-            InvoiceItem item) {
+    private DateTime taxDateForInvoiceItem(UUID kbTenantId, Account account, Invoice invoice, InvoiceItem item) {
         EasyTaxTaxDateResolver dateResolver = taxDateResolver(kbTenantId);
         return dateResolver.taxDateForInvoiceItem(kbTenantId, account, invoice, item, null);
     }
 
-    private List<InvoiceItem> taxInvoiceItemsForInvoiceItem(final Account account,
-            final Invoice newInvoice, final InvoiceItem taxableItem, final String taxZone,
-            final BigDecimal netItemAmount, final LocalDate utcToday, final UUID kbTenantId,
-            final Map<String, String> planToProductCache) throws SQLException {
+    private List<InvoiceItem> taxInvoiceItemsForInvoiceItem(
+            final Account account,
+            final Invoice newInvoice,
+            final InvoiceItem taxableItem,
+            @Nullable final InvoiceItem repairItem,
+            final String taxZone,
+            final BigDecimal netItemAmount,
+            final UUID kbTenantId,
+            final Map<String, String> planToProductCache
+    ) throws SQLException {
         DateTime taxDate = taxDateForInvoiceItem(kbTenantId, account, newInvoice, taxableItem);
         if (taxDate == null) {
             // use the current date; should this be configurable (i.e. to bail if not found)?
             taxDate = clock.getUTCNow();
         }
         String productName = productNameForInvoiceItem(taxableItem, planToProductCache, kbTenantId);
-        List<EasyTaxTaxCode> taxCodes = dao.getTaxCodes(kbTenantId, taxZone, productName, null,
-                taxDate);
+        List<EasyTaxTaxCode> taxCodes = dao.getTaxCodes(kbTenantId, taxZone, productName, null, taxDate);
         if (taxCodes == null || taxCodes.isEmpty()) {
             return Collections.emptyList();
         }
@@ -401,9 +478,14 @@ public class EasyTaxTaxCalculator extends PluginTaxCalculator {
         final RoundingMode roundingMode = config.getTaxRoundingMode();
         List<InvoiceItem> newTaxItems = new ArrayList<>();
         for (EasyTaxTaxCode taxCode : taxCodes) {
-            InvoiceItem taxItem = buildTaxItem(taxableItem, newInvoice.getId(), utcToday,
+            final String description = taxCode.getTaxCode() + "||" + taxCode.getTaxRate().setScale(4, roundingMode);
+            InvoiceItem taxItem = buildTaxItem(
+                    taxableItem,
+                    newInvoice.getId(),
+                    repairItem,
                     taxCode.getTaxRate().multiply(netItemAmount).setScale(scale, roundingMode),
-                    taxCode.getTaxCode());
+                    description
+            );
             if (taxItem != null) {
                 newTaxItems.add(taxItem);
             }

@@ -21,6 +21,8 @@ import static org.killbill.billing.plugin.easytax.dao.gen.tables.EasytaxTaxation
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -33,6 +35,7 @@ import javax.annotation.Nullable;
 import javax.sql.DataSource;
 
 import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 import org.jooq.Configuration;
 import org.jooq.DSLContext;
 import org.jooq.DeleteConditionStep;
@@ -58,6 +61,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
  * @version 2
  */
 public class JooqEasyTaxDao extends PluginDao implements EasyTaxDao {
+
+    public static DateTime toDateTime(LocalDateTime ldt) {
+        // https://github.com/killbill/killbill-plugin-framework-java/blob/4ba54ece937bad65642914fea61fc248fa51d061/src/test/java/org/killbill/billing/plugin/dao/TestPluginDao.java#L71
+        return new DateTime(ldt.atZone(ZoneOffset.UTC).toInstant().toEpochMilli(), DateTimeZone.UTC);
+    }
 
     // CHECKSTYLE OFF: LineLength
     private static final TypeReference<Map<UUID, Set<UUID>>> INVOICE_ITEM_ID_TAX_MAPPING_TYPE = new TypeReference<Map<UUID, Set<UUID>>>() {
@@ -106,14 +114,14 @@ public class JooqEasyTaxDao extends PluginDao implements EasyTaxDao {
             final DSLContext dslContext) {
         int updateCount = dslContext.update(EASYTAX_TAX_CODES)
                 .set(EASYTAX_TAX_CODES.TAX_RATE, taxCode.getTaxRate())
-                .set(EASYTAX_TAX_CODES.VALID_FROM_DATE, taxCode.getValidFromDate())
-                .set(EASYTAX_TAX_CODES.VALID_TO_DATE, taxCode.getValidToDate())
-                .set(EASYTAX_TAX_CODES.CREATED_DATE, date)
+                .set(EASYTAX_TAX_CODES.VALID_FROM_DATE, toLocalDateTime(taxCode.getValidFromDate()))
+                .set(EASYTAX_TAX_CODES.VALID_TO_DATE, toLocalDateTime(taxCode.getValidToDate()))
+                .set(EASYTAX_TAX_CODES.CREATED_DATE, toLocalDateTime(date))
                 .where(EASYTAX_TAX_CODES.KB_TENANT_ID.equal(taxCode.getKbTenantId().toString()))
                 .and(EASYTAX_TAX_CODES.TAX_ZONE.equal(taxCode.getTaxZone()))
                 .and(EASYTAX_TAX_CODES.PRODUCT_NAME.equal(taxCode.getProductName()))
                 .and(EASYTAX_TAX_CODES.TAX_CODE.equal(taxCode.getTaxCode()))
-                .and(EASYTAX_TAX_CODES.VALID_FROM_DATE.equal(taxCode.getValidFromDate())).execute();
+                .and(EASYTAX_TAX_CODES.VALID_FROM_DATE.equal(toLocalDateTime(taxCode.getValidFromDate()))).execute();
 
         if (updateCount < 1) {
             dslContext
@@ -124,7 +132,7 @@ public class JooqEasyTaxDao extends PluginDao implements EasyTaxDao {
                             EASYTAX_TAX_CODES.CREATED_DATE)
                     .values(taxCode.getKbTenantId().toString(), taxCode.getTaxZone(),
                             taxCode.getProductName(), taxCode.getTaxCode(), taxCode.getTaxRate(),
-                            taxCode.getValidFromDate(), taxCode.getValidToDate(), date)
+                            toLocalDateTime(taxCode.getValidFromDate()), toLocalDateTime(taxCode.getValidToDate()), toLocalDateTime(date))
                     .execute();
         }
     }
@@ -175,9 +183,9 @@ public class JooqEasyTaxDao extends PluginDao implements EasyTaxDao {
                             select = select.and(EASYTAX_TAX_CODES.TAX_CODE.equal(taxCode));
                         }
                         if (date != null) {
-                            select = select.and(EASYTAX_TAX_CODES.VALID_FROM_DATE.lessOrEqual(date))
+                            select = select.and(EASYTAX_TAX_CODES.VALID_FROM_DATE.lessOrEqual(toLocalDateTime(date)))
                                     .and(EASYTAX_TAX_CODES.VALID_TO_DATE.isNull()
-                                            .or(EASYTAX_TAX_CODES.VALID_TO_DATE.greaterThan(date)));
+                                            .or(EASYTAX_TAX_CODES.VALID_TO_DATE.greaterThan(toLocalDateTime(date))));
                             return select.orderBy(EASYTAX_TAX_CODES.VALID_FROM_DATE.desc()).fetch();
                         } else {
                             return select.orderBy(EASYTAX_TAX_CODES.RECORD_ID.asc()).fetch();
@@ -191,15 +199,15 @@ public class JooqEasyTaxDao extends PluginDao implements EasyTaxDao {
         List<EasyTaxTaxCode> results = new ArrayList<>();
         for (EasytaxTaxCodesRecord record : records) {
             EasyTaxTaxCode result = new EasyTaxTaxCode();
-            result.setCreatedDate(record.getCreatedDate());
+            result.setCreatedDate(toDateTime(record.getCreatedDate()));
             result.setKbTenantId(UUID.fromString(record.getKbTenantId()));
             result.setProductName(record.getProductName());
             result.setTaxZone(record.getTaxZone());
             result.setTaxCode(record.getTaxCode());
             result.setTaxRate(record.getTaxRate());
-            result.setValidFromDate(record.getValidFromDate());
+            result.setValidFromDate(toDateTime(record.getValidFromDate()));
             if (record.getValidToDate() != null) {
-                result.setValidToDate(record.getValidToDate());
+                result.setValidToDate(toDateTime(record.getValidToDate()));
             }
             results.add(result);
         }
@@ -214,14 +222,19 @@ public class JooqEasyTaxDao extends PluginDao implements EasyTaxDao {
             @Override
             public Void withConnection(final Connection conn) throws SQLException {
                 DSL.using(conn, dialect, settings)
-                        .insertInto(EASYTAX_TAXATIONS, EASYTAX_TAXATIONS.KB_TENANT_ID,
-                                EASYTAX_TAXATIONS.KB_ACCOUNT_ID, EASYTAX_TAXATIONS.KB_INVOICE_ID,
-                                EASYTAX_TAXATIONS.KB_INVOICE_ITEM_IDS, EASYTAX_TAXATIONS.TOTAL_TAX,
+                        .insertInto(EASYTAX_TAXATIONS,
+                                EASYTAX_TAXATIONS.KB_TENANT_ID,
+                                EASYTAX_TAXATIONS.KB_ACCOUNT_ID,
+                                EASYTAX_TAXATIONS.KB_INVOICE_ID,
+                                EASYTAX_TAXATIONS.KB_INVOICE_ITEM_IDS,
+                                EASYTAX_TAXATIONS.TOTAL_TAX,
                                 EASYTAX_TAXATIONS.CREATED_DATE)
                         .values(taxation.getKbTenantId().toString(),
                                 taxation.getKbAccountId().toString(),
-                                taxation.getKbInvoiceId().toString(), invoiceItemIdTaxMappingJson,
-                                taxation.getTotalTax(), taxation.getCreatedDate())
+                                taxation.getKbInvoiceId().toString(),
+                                invoiceItemIdTaxMappingJson,
+                                taxation.getTotalTax(),
+                                toLocalDateTime(taxation.getCreatedDate()))
                         .execute();
                 return null;
             }
@@ -249,7 +262,7 @@ public class JooqEasyTaxDao extends PluginDao implements EasyTaxDao {
         return records.stream().map(record -> {
             EasyTaxTaxation result = new EasyTaxTaxation();
             result.setRecordId(record.getRecordId().longValue());
-            result.setCreatedDate(record.getCreatedDate());
+            result.setCreatedDate(toDateTime(record.getCreatedDate()));
             result.setKbTenantId(UUID.fromString(record.getKbTenantId()));
             result.setKbAccountId(UUID.fromString(record.getKbAccountId()));
             result.setKbInvoiceId(UUID.fromString(record.getKbInvoiceId()));

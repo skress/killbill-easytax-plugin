@@ -1,5 +1,19 @@
+WARNING
+=======
+This is a fork of https://github.com/SolarNetwork/killbill-easytax-plugin updated to be compatible with KillBill 0.22.x. KillBill changed
+the tax API in June 2020 (https://github.com/killbill/killbill-plugin-framework-java/commit/084257f0779bdf8f64a8e1e085045b0f89f17456) such 
+that major changes were necessary.
+
+For simple cases, the plugin seems to work. But not all tests are running successfully, so you'd **better not use this plugin in production**.
+
 EasyTax plugin
 ==============
+
+https://groups.google.com/g/killbilling-users/c/1F1AkZKXX20/m/ebYtnyTwAwAJ
+https://github.com/killbill/killbill-plugin-framework-java/pull/41
+
+Todos:
+- Check what happens if an invoice is adjusted at a time where the tax rate has changed compared to the initial invoice
 
 Kill Bill tax plugin for simple region based tax systems. It works by allowing tax rates to be
 defined at the following granularity:
@@ -20,8 +34,7 @@ Kill Bill compatibility
 
 | Plugin version | Kill Bill version |
 | -------------: | ----------------: |
-| 0.1.y          | 0.18.z            |
-| 2.x.y          | 0.22.z            |
+| 0.1.y          | 0.22.z            |
 
 Requirements
 ------------
@@ -322,8 +335,16 @@ This section details some information useful when developing this plugin.
 ## Generating jOOQ DAO classes
 
 To generate the jOOQ classes in the `org.killbill.billing.plugin.easytax.dao.gen` package hierarchy,
-you must have a `killbill` MySQL database available with the `src/main/resources/ddl.sql` DDL loaded.
-A `killbill` user with password `killbill` must also be available. Then, run the following command:
+you must have a `killbill` PostgreSQL/MySQL database available with the `src/main/resources/ddl.sql`
+(and for PostgreSQL additionaly `src/main/resources/ddl-postgresql.sql`) DDL loaded.
+A `killbill` user with password `killbillpw` must also be available. Currently `src/main/resources/gen.sh` and 
+`src/main/resources/gen.xml` are configured to connect to PostgreSQL, to switch to MySQL, you need to ...
+
+- set `DB=mysql` in `src/main/resources/gen.sh`
+- adapt the JDBC driver settings in `src/main/resources/gen.xml`
+
+
+Then, run the following command:
 
 ```sh
 ./src/main/resources/gen.sh
@@ -334,6 +355,13 @@ not the default runtime available, e.g.
 
 ```sh
 JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk1.8.0_241.jdk/Contents/Home src/main/resources/gen.sh
+```
+
+## Compiling and bundling
+
+```
+mvn compile
+mvn [-DskipTests] package
 ```
 
 ## Releasing

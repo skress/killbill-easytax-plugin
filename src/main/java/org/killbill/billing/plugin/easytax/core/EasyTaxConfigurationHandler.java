@@ -31,9 +31,8 @@ public class EasyTaxConfigurationHandler
         extends PluginTenantConfigurableConfigurationHandler<EasyTaxConfig> {
 
     public EasyTaxConfigurationHandler(final String pluginName,
-            final OSGIKillbillAPI osgiKillbillApi,
-            final OSGIKillbillLogService osgiKillbillLogService) {
-        super(pluginName, osgiKillbillApi, osgiKillbillLogService);
+            final OSGIKillbillAPI osgiKillbillApi) {
+        super(pluginName, osgiKillbillApi);
     }
 
     @Override

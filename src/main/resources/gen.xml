@@ -17,10 +17,14 @@
 <configuration>
     <!-- Configure the database connection here -->
     <jdbc>
-        <driver>com.mysql.jdbc.Driver</driver>
-        <url>jdbc:mysql://127.0.0.1:3306/killbill</url>
+        <!-- for MySQL -->
+        <!--driver>com.mysql.jdbc.Driver</driver>
+        <url>jdbc:mysql://127.0.0.1:3306/killbill</url-->
+        <!-- for PostgreSQL -->
+        <driver>org.postgresql.Driver</driver>
+        <url>jdbc:postgresql://127.0.0.1:5432/killbilldb</url>
         <user>killbill</user>
-        <password>killbill</password>
+        <password>killbillpw</password>
 
         <!-- You can also pass user/password and other JDBC properties in the optional properties tag:
         <properties>
@@ -32,27 +36,10 @@
 
     <generator>
         <database>
-            <!-- The database dialect from jooq-meta. Available dialects are
-                 named org.util.[database].[database]Database. Known values are:
-
-                 org.jooq.util.ase.ASEDatabase (to be used with Sybase ASE)
-                 org.jooq.util.cubrid.CUBRIDDatabase
-                 org.jooq.util.db2.DB2Database
-                 org.jooq.util.derby.DerbyDatabase
-                 org.jooq.util.h2.H2Database
-                 org.jooq.util.hsqldb.HSQLDBDatabase
-                 org.jooq.util.ingres.IngresDatabase
-                 org.jooq.util.mysql.MySQLDatabase
-                 org.jooq.util.oracle.OracleDatabase
-                 org.jooq.util.postgres.PostgresDatabase
-                 org.jooq.util.sqlite.SQLiteDatabase
-                 org.jooq.util.sqlserver.SQLServerDatabase
-                 org.jooq.util.sybase.SybaseDatabase (to be used with Sybase SQL Anywhere)
-
-                 You can also provide your own org.jooq.util.Database implementation
-                 here, if your database is currently not supported or if you wish to
-                 read the database schema from a file, such as a Hibernate .hbm.xml file -->
-            <name>org.jooq.util.mysql.MySQLDatabase</name>
+            <!-- The database dialect from jooq-meta.
+                 org.jooq.meta.mysql.MySQLDatabase
+                 org.jooq.meta.postgres.PostgresDatabase -->
+            <name>org.jooq.meta.postgres.PostgresDatabase</name>
 
             <!-- All elements that are generated from your schema (A Java regular expression.
                  Use the pipe to separate several expressions) Watch out for
@@ -72,28 +59,18 @@
 
                  If left empty, jOOQ will generate all available schemata. See the
                  manual's next section to learn how to generate several schemata -->
-            <inputSchema>killbill</inputSchema>
-            <outputSchema/>
+            <inputSchema>public</inputSchema>
 
-            <customTypes>
-                <customType>
-                    <name>DateTimeUTC</name>
-                    <type>org.joda.time.DateTime</type>
-                    <binding>org.killbill.billing.plugin.easytax.dao.JodaDateTimeBinding</binding>
-                </customType>
-            </customTypes>
-
-            <forcedTypes>
-                <forcedType>
-                    <name>DateTimeUTC</name>
-                    <expression>.*_date</expression>
-                    <types>.*</types>
-                </forcedType>
-            </forcedTypes>
           </database>
 
         <generate>
             <!-- Generation flags: See advanced configuration properties -->
+
+            <!-- Possible values for generatedSerialVersionUID
+                 - CONSTANT (default): Always generate 1L
+                 - OFF               : Don't generate a serialVersionUID
+                 - HASH              : Calculate a unique-ish value based on the hash code of the content -->
+            <generatedSerialVersionUID>HASH</generatedSerialVersionUID>
         </generate>
 
         <target>

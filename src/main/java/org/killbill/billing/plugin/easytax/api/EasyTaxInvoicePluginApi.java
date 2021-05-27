@@ -15,9 +15,13 @@
 
 package org.killbill.billing.plugin.easytax.api;
 
+import java.util.Collection;
 import java.util.List;
 
+import com.google.common.collect.Lists;
+import org.killbill.billing.account.api.Account;
 import org.killbill.billing.invoice.api.Invoice;
+import org.killbill.billing.invoice.api.InvoiceApiException;
 import org.killbill.billing.invoice.api.InvoiceItem;
 import org.killbill.billing.osgi.libs.killbill.OSGIConfigPropertiesService;
 import org.killbill.billing.osgi.libs.killbill.OSGIKillbillAPI;
@@ -58,20 +62,32 @@ public class EasyTaxInvoicePluginApi extends PluginInvoicePluginApi {
      * @param clock
      *            the system clock
      */
-    public EasyTaxInvoicePluginApi(final EasyTaxConfigurationHandler configurationHandler,
-            final EasyTaxDao dao, final OptionalService<EasyTaxTaxZoneResolver> taxZoneResolver,
+    public EasyTaxInvoicePluginApi(
+            final EasyTaxConfigurationHandler configurationHandler,
+            final EasyTaxDao dao,
+            final OptionalService<EasyTaxTaxZoneResolver> taxZoneResolver,
             final OptionalService<EasyTaxTaxDateResolver> taxDateResolver,
-            final OSGIKillbillAPI killbillApi, final OSGIConfigPropertiesService configProperties,
-            final OSGIKillbillLogService logService, final Clock clock) {
-        super(killbillApi, configProperties, logService, clock);
-        this.calculator = new EasyTaxTaxCalculator(killbillApi, configurationHandler, dao,
-                taxZoneResolver, taxDateResolver, clock);
+            final OSGIKillbillAPI killbillApi,
+            final OSGIConfigPropertiesService configProperties,
+            final OSGIKillbillLogService logService,
+            final Clock clock) {
+        super(killbillApi, configProperties, clock);
+        this.calculator = new EasyTaxTaxCalculator(killbillApi, configurationHandler, dao, taxZoneResolver, taxDateResolver, clock);
     }
 
     @Override
-    public List<InvoiceItem> getAdditionalInvoiceItems(final Invoice invoice, final boolean dryRun,
-            final Iterable<PluginProperty> properties, final CallContext context) {
-        return getAdditionalTaxInvoiceItems(calculator, invoice, dryRun, properties, context);
+    public List<InvoiceItem> getAdditionalInvoiceItems(final Invoice invoice, final boolean dryRun, final Iterable<PluginProperty> properties, final CallContext context) {
+        final Collection<PluginProperty> pluginProperties = Lists.<PluginProperty>newArrayList(properties);
+
+        final Account account = getAccount(invoice.getAccountId(), context);
+
+        try {
+            final List<InvoiceItem> result = calculator.compute(account, invoice, dryRun, pluginProperties, context);
+            return result;
+        } catch (final InvoiceApiException e) {
+            // Prevent invoice generation
+            throw new RuntimeException(e);
+        }
     }
 
 }

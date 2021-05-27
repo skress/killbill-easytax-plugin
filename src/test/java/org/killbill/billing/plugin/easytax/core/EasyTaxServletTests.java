@@ -119,7 +119,7 @@ public class EasyTaxServletTests {
             willAnswer(new Answer<Void>() {
                 @Override
                 public Void answer(InvocationOnMock invocation) throws Throwable {
-                    List<Permission> list = invocation.getArgumentAt(0, List.class);
+                    List<Permission> list = invocation.getArgument(0);
                     // assume AND here
                     for (Permission p : permissions) {
                         if (list.contains(p)) {
@@ -132,9 +132,8 @@ public class EasyTaxServletTests {
                     Mockito.eq(Logical.AND), argThat(new ArgumentMatcher<TenantContext>() {
 
                         @Override
-                        public boolean matches(Object arg) {
-                            return (arg instanceof TenantContext
-                                    && tenantId.equals(((TenantContext) arg).getTenantId()));
+                        public boolean matches(TenantContext tenantContext) {
+                            return tenantId.equals(tenantContext.getTenantId());
                         }
 
                     }));

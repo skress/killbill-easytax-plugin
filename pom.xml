@@ -19,7 +19,7 @@
     <parent>
         <artifactId>killbill-oss-parent</artifactId>
         <groupId>org.kill-bill.billing</groupId>
-        <version>0.143.60</version>
+        <version>0.144.49</version>
     </parent>
     <groupId>net.solarnetwork.billing</groupId>
     <artifactId>easytax-plugin</artifactId>
@@ -44,11 +44,22 @@
             <url>https://api.bintray.com/maven/solarnetwork/SolarNetwork/killbill-easytax-plugin/;publish=0</url>
         </repository>
     </distributionManagement>
+    <properties>
+        <check.fail-dependency>false</check.fail-dependency>
+        <check.fail-spotbugs>false</check.fail-spotbugs>
+        <check.spotbugs-exclude-filter-file>spotbugs-exclude.xml</check.spotbugs-exclude-filter-file>
+        <osgi.private>org.killbill.billing.plugin.easytax.*</osgi.private>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.reactivestreams</groupId>
+                <artifactId>reactive-streams</artifactId>
+                <version>1.0.3</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     <dependencies>
-        <dependency>
-            <groupId>com.google.code.findbugs</groupId>
-            <artifactId>jsr305</artifactId>
-        </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
@@ -66,9 +77,27 @@
             <artifactId>jackson-datatype-joda</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.google.code.findbugs</groupId>
+            <artifactId>jsr305</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.airlift</groupId>
+            <artifactId>command</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.airlift</groupId>
+            <artifactId>testing-mysql-server</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.airlift</groupId>
+            <artifactId>units</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>javax.servlet</groupId>
@@ -78,6 +107,16 @@
         <dependency>
             <groupId>joda-time</groupId>
             <artifactId>joda-time</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.felix</groupId>
+            <artifactId>org.apache.felix.framework</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.jooq</groupId>
@@ -91,15 +130,22 @@
         <dependency>
             <groupId>org.kill-bill.billing</groupId>
             <artifactId>killbill-platform-osgi-api</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.kill-bill.billing</groupId>
             <artifactId>killbill-platform-osgi-bundles-lib-killbill</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.kill-bill.billing</groupId>
-            <artifactId>killbill-platform-osgi-bundles-lib-slf4j-osgi</artifactId>
+            <artifactId>killbill-platform-test</artifactId>
+            <scope>test</scope>
         </dependency>
+        <!--dependency>
+            <groupId>org.kill-bill.billing</groupId>
+            <artifactId>killbill-platform-osgi-bundles-lib-slf4j-osgi</artifactId>
+        </dependency-->
         <dependency>
             <groupId>org.kill-bill.billing.plugin</groupId>
             <artifactId>killbill-plugin-api-invoice</artifactId>
@@ -122,6 +168,7 @@
         <dependency>
             <groupId>org.kill-bill.commons</groupId>
             <artifactId>killbill-embeddeddb-common</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.kill-bill.commons</groupId>
@@ -135,46 +182,27 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.kill-bill.billing</groupId>
-            <artifactId>killbill-platform-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.airlift</groupId>
-            <artifactId>command</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.airlift</groupId>
-            <artifactId>testing-mysql-server</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.airlift</groupId>
-            <artifactId>units</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-all</artifactId>
+            <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
+        <!--dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.compendium</artifactId>
-        </dependency>
-        <dependency>
+        </dependency-->
+        <!--dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.core</artifactId>
-        </dependency>
+        </dependency-->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testng</groupId>
@@ -182,15 +210,21 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-    <profiles>
+    <!--profiles>
         <profile>
-            <id>jdk16</id>
+            <id>jdk1.6</id>
             <activation>
                 <activeByDefault>false</activeByDefault>
             </activation>
         </profile>
         <profile>
-            <id>jdk18</id>
+            <id>jdk1.8</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+        </profile>
+        <profile>
+            <id>jdk11</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
@@ -204,13 +238,13 @@
                 <additionalparam>-Xdoclint:none</additionalparam>
             </properties>
         </profile>
-    </profiles>
+    </profiles-->
     <build>
         <plugins>
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
-                <extensions>true</extensions>
+                <!--extensions>true</extensions>
                 <executions>
                     <execution>
                         <phase>process-classes</phase>
@@ -218,15 +252,15 @@
                             <goal>manifest</goal>
                         </goals>
                     </execution>
-                </executions>
-                <configuration>
+                </executions-->
+                <!--configuration>
                     <instructions>
                         <Bundle-Activator>org.killbill.billing.plugin.easytax.core.EasyTaxActivator</Bundle-Activator>
                         <Export-Package>org.killbill.billing.plugin.easytax.api;
                             org.killbill.billing.plugin.easytax.core</Export-Package>
-                        <Private-Package>org.killbill.billing.plugin.easytax.dao.*</Private-Package>
+                        <Private-Package>org.killbill.billing.plugin.easytax.dao.*</Private-Package-->
                         <!-- Optional resolution because exported by the Felix system bundle -->
-                        <Import-Package>org.killbill.billing.account.api;
+                        <!--Import-Package>org.killbill.billing.account.api;
                             org.killbill.billing.catalog.api;
                             org.killbill.billing.invoice.api;
                             org.killbill.billing.entitlement.api;
@@ -290,9 +324,9 @@
                             *;resolution:=optional
                         </Import-Package>
                     </instructions>
-                </configuration>
+                </configuration-->
             </plugin>
-            <plugin>
+            <!--plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <executions>
@@ -314,8 +348,8 @@
                         </configuration>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
+            </plugin-->
+            <!--plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
                 <version>3.1.1</version>
@@ -344,16 +378,16 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
+            </plugin-->
+            <!--plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
                 <version>2.9</version>
                 <configuration>
                     <excludePackageNames>org.killbill.billing.plugin.easytax.dao.gen.*</excludePackageNames>
                 </configuration>
-            </plugin>
-            <plugin>
+            </plugin-->
+            <!--plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-gpg-plugin</artifactId>
                 <version>1.6</version>
@@ -370,8 +404,8 @@
                         </configuration>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
+            </plugin-->
+            <!--plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
@@ -379,8 +413,8 @@
                         <include>**/*Tests.java</include>
                     </includes>
                 </configuration>
-            </plugin>
-            <plugin>
+            </plugin-->
+            <!--plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
                 <configuration>
@@ -391,16 +425,16 @@
                         <exclude>src/main/java/org/killbill/billing/plugin/easytax/dao/gen/**</exclude>
                     </excludes>
                 </configuration>
-            </plugin>
-            <plugin>
+            </plugin-->
+            <!--plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-release-plugin</artifactId>
                 <configuration>
                     <releaseProfiles>release,!sonatype-oss-release</releaseProfiles>
                 </configuration>
-            </plugin>
+            </plugin-->
         </plugins>
-        <pluginManagement>
+        <!--pluginManagement>
             <plugins>
                 <plugin>
                     <groupId>org.eclipse.m2e</groupId>
@@ -427,6 +461,6 @@
                     </configuration>
                 </plugin>
             </plugins>
-        </pluginManagement>
+        </pluginManagement-->
     </build>
 </project>

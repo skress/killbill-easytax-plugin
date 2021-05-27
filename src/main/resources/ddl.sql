@@ -4,15 +4,13 @@
  * https://bugs.mysql.com/bug.php?id=37130
  */
 
-SELECT @@global.time_zone, @@session.time_zone;
-
 drop table if exists easytax_taxations;
 create table easytax_taxations (
   record_id serial
 , kb_tenant_id char(36) not null
 , kb_account_id char(36) not null
 , kb_invoice_id char(36) not null
-, kb_invoice_item_ids mediumtext default null
+, kb_invoice_item_ids longtext default null
 , total_tax numeric(15,9) default null
 , created_date datetime not null
 , primary key(record_id)
